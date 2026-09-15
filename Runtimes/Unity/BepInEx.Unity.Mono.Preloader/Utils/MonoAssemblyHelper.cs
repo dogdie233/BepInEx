@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -15,13 +16,30 @@ internal static class MonoAssemblyHelper
     {
         // We can't use mono's __Internal because on Windows it will use GetModuleHandleW(NULL) that will
         // in turn return the module to the EXE and not mono.dll (at least on Unity versions < 5).
-        typeof(MonoAssemblyHelper).ResolveDynDllImports(new()
+        // MonoMod 25 removed DynDllImport; resolve the exports manually.
+        var candidates = new List<string>();
+        var monoLibPath = EnvVars.DOORSTOP_MONO_LIB_PATH;
+        if (!string.IsNullOrEmpty(monoLibPath))
+            candidates.Add(monoLibPath);
+        candidates.Add("mono");
+
+        foreach (var candidate in candidates)
         {
-            ["mono"] = new()
-            {
-                EnvVars.DOORSTOP_MONO_LIB_PATH
-            }
-        });
+            var module = NativeLibLoader.LoadLibrary(candidate);
+            if (module == 0)
+                continue;
+
+            var imageOpenPtr = NativeLibLoader.GetSymbol(module, "mono_image_open_from_data_with_name");
+            var assemblyLoadPtr = NativeLibLoader.GetSymbol(module, "mono_assembly_load_from_full");
+            if (imageOpenPtr == 0 || assemblyLoadPtr == 0)
+                continue;
+
+            imageOpen = (ImageOpenDelegate) Marshal.GetDelegateForFunctionPointer(
+                imageOpenPtr, typeof(ImageOpenDelegate));
+            assemblyLoad = (AssemblyLoadDelegate) Marshal.GetDelegateForFunctionPointer(
+                assemblyLoadPtr, typeof(AssemblyLoadDelegate));
+            break;
+        }
     }
 
     private static ReadAssemblyResult ReadAssemblyData(string filePath)
@@ -110,10 +128,41 @@ internal static class MonoAssemblyHelper
         }
     }
 #pragma warning disable CS0649
-    [DynDllImport("mono", "mono_image_open_from_data_with_name")]
     private static ImageOpenDelegate imageOpen;
 
-    [DynDllImport("mono", "mono_assembly_load_from_full")]
     private static AssemblyLoadDelegate assemblyLoad;
 #pragma warning restore CS0649
+
+    // Minimal cross-platform dynamic library loader replacing MonoMod 22's DynDll.
+    private static class NativeLibLoader
+    {
+        private const int RTLD_NOW = 2;
+
+        [DllImport("kernel32", CharSet = CharSet.Ansi, SetLastError = true, ExactSpelling = true)]
+        private static extern nint LoadLibraryA(string path);
+
+        [DllImport("kernel32", CharSet = CharSet.Ansi, SetLastError = true, ExactSpelling = true)]
+        private static extern nint GetProcAddress(nint module, string name);
+
+        // Only invoked on Unix; DllImport resolution is lazy so these never load on Windows.
+        [DllImport("__Internal", EntryPoint = "dlopen")]
+        private static extern nint dlopen(string file, int flags);
+
+        [DllImport("__Internal", EntryPoint = "dlsym")]
+        private static extern nint dlsym(nint handle, string name);
+
+        public static nint LoadLibrary(string path)
+        {
+            if (PlatformHelper.Is(Platform.Windows))
+                return LoadLibraryA(path);
+            return dlopen(path, RTLD_NOW);
+        }
+
+        public static nint GetSymbol(nint module, string name)
+        {
+            if (PlatformHelper.Is(Platform.Windows))
+                return GetProcAddress(module, name);
+            return dlsym(module, name);
+        }
+    }
 }

@@ -142,9 +142,12 @@ internal class WindowsConsoleDriver : IConsoleDriver
 
     public void SetConsoleTitle(string title) => ConsoleWindow.Title = title;
 
+    // MonoMod 25 removed ReflectionHelper.IsCore; use the equivalent runtime check.
+    private static bool IsCoreRuntime => typeof(object).Assembly.GetName().Name == "System.Private.CoreLib";
+
     private static Stream OpenFileStream(IntPtr handle)
     {
-        if (ReflectionHelper.IsCore)
+        if (IsCoreRuntime)
         {
             var windowsConsoleStreamType = Type.GetType("System.ConsolePal+WindowsConsoleStream, System.Console", true);
             var constructor = AccessTools.Constructor(windowsConsoleStreamType,

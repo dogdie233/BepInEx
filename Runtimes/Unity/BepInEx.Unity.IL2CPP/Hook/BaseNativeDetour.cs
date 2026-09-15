@@ -63,7 +63,7 @@ internal abstract class BaseNativeDetour<T> : INativeDetour where T : BaseNative
         if (TrampolineMethod == null)
         {
             Prepare();
-            TrampolineMethod = DetourHelper.GenerateNativeProxy(TrampolinePtr, signature);
+            TrampolineMethod = NativeProxyGenerator.Generate(TrampolinePtr, signature);
         }
 
         return TrampolineMethod;

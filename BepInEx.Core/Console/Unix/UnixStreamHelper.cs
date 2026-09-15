@@ -1,61 +1,34 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.IO;
-using MonoMod.Utils;
+using System.Runtime.InteropServices;
 
 namespace BepInEx.Unix;
 
 internal static class UnixStreamHelper
 {
-    public delegate int dupDelegate(int fd);
+    // MonoMod 22's DynDllImport was removed in MonoMod 25; these libc exports are
+    // stable enough to bind via plain P/Invoke ("libc" resolves on glibc/musl Linux
+    // and libSystem on macOS).
+    [DllImport("libc", SetLastError = true)]
+    public static extern int dup(int fd);
 
-    public delegate int fcloseDelegate(IntPtr stream);
+    [DllImport("libc", SetLastError = true)]
+    public static extern int fclose(IntPtr stream);
 
-    public delegate IntPtr fdopenDelegate(int fd, string mode);
+    [DllImport("libc", SetLastError = true)]
+    public static extern IntPtr fdopen(int fd, string mode);
 
-    public delegate int fflushDelegate(IntPtr stream);
+    [DllImport("libc", SetLastError = true)]
+    public static extern int fflush(IntPtr stream);
 
-    public delegate IntPtr freadDelegate(IntPtr ptr, IntPtr size, IntPtr nmemb, IntPtr stream);
+    [DllImport("libc", SetLastError = true)]
+    public static extern IntPtr fread(IntPtr ptr, IntPtr size, IntPtr nmemb, IntPtr stream);
 
-    public delegate int fwriteDelegate(IntPtr ptr, IntPtr size, IntPtr nmemb, IntPtr stream);
+    [DllImport("libc", SetLastError = true)]
+    public static extern int fwrite(IntPtr ptr, IntPtr size, IntPtr nmemb, IntPtr stream);
 
-    public delegate int isattyDelegate(int fd);
-
-    [DynDllImport("libc")]
-    public static dupDelegate dup;
-
-    [DynDllImport("libc")]
-    public static fdopenDelegate fdopen;
-
-    [DynDllImport("libc")]
-    public static freadDelegate fread;
-
-    [DynDllImport("libc")]
-    public static fwriteDelegate fwrite;
-
-    [DynDllImport("libc")]
-    public static fcloseDelegate fclose;
-
-    [DynDllImport("libc")]
-    public static fflushDelegate fflush;
-
-    [DynDllImport("libc")]
-    public static isattyDelegate isatty;
-
-    static UnixStreamHelper()
-    {
-        var libcMapping = new Dictionary<string, List<DynDllMapping>>
-        {
-            ["libc"] = new()
-            {
-                "libc.so.6",               // Ubuntu glibc
-                "libc",                    // Linux glibc
-                "/usr/lib/libSystem.dylib" // OSX POSIX
-            }
-        };
-
-        typeof(UnixStreamHelper).ResolveDynDllImports(libcMapping);
-    }
+    [DllImport("libc", SetLastError = true)]
+    public static extern int isatty(int fd);
 
     public static Stream CreateDuplicateStream(int fileDescriptor)
     {

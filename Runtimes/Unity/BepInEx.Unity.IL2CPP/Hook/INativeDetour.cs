@@ -7,12 +7,13 @@ using BepInEx.Logging;
 using BepInEx.Unity.IL2CPP.Hook.Dobby;
 using BepInEx.Unity.IL2CPP.Hook.Funchook;
 using MonoMod.RuntimeDetour;
-using MonoMod.Utils;
 
 namespace BepInEx.Unity.IL2CPP.Hook;
 
 public interface INativeDetour : IDetour
 {
+    // MonoMod 25's IDetour requires a Config property; BepInEx detours carry none.
+    DetourConfig IDetour.Config => null;
     private static readonly ConfigEntry<DetourProvider> DetourProviderType = ConfigFile.CoreConfig.Bind(
          "Detours", "DetourProviderType",
          DetourProvider.Default,
@@ -24,6 +25,13 @@ public interface INativeDetour : IDetour
     public nint OriginalMethodPtr { get; }
     public nint DetourMethodPtr { get; }
     public nint TrampolinePtr { get; }
+
+    // MonoMod 22's IDetour declared these; MonoMod 25's does not, so declare them here.
+    void Free();
+
+    MethodBase GenerateTrampoline(MethodBase signature = null);
+
+    T GenerateTrampoline<T>() where T : Delegate;
 
     private static INativeDetour CreateDefault<T>(nint original, T target) where T : Delegate =>
         // TODO: check and provide an OS accurate provider
@@ -42,12 +50,10 @@ public interface INativeDetour : IDetour
             DetourProvider.Funchook => new FunchookDetour(original, target),
             _                       => CreateDefault(original, target)
         };
-        if (!ReflectionHelper.IsMono)
-        {
-            return new CacheDetourWrapper(detour, target);
-        }
 
-        return detour;
+        // The IL2CPP flavor always runs on CoreCLR; wrap the detour to keep the
+        // target delegate + trampolines alive for as long as the detour lives.
+        return new CacheDetourWrapper(detour, target);
     }
 
     /// <summary>
